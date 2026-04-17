@@ -41,14 +41,28 @@ class HARAUtility:
             gamma: Risk preference parameter
             alpha: Scaling parameter (> 0)
             M: Wealth offset parameter
+            
+        SAFETY: Added input validation to prevent invalid parameters
         """
-        self.gamma = gamma
-        self.alpha = alpha
-        self.M = M
+        # CRITICAL FIX: Input validation
+        if not isinstance(gamma, (int, float)):
+            raise TypeError(f"gamma must be numeric, got {type(gamma)}")
+        if not isinstance(alpha, (int, float)):
+            raise TypeError(f"alpha must be numeric, got {type(alpha)}")
+        if not isinstance(M, (int, float)):
+            raise TypeError(f"M must be numeric, got {type(M)}")
+            
+        self.gamma = float(gamma)
+        self.alpha = float(alpha)
+        self.M = float(M)
         
         # Validate parameters
         if alpha <= 0:
-            raise ValueError("alpha must be positive")
+            raise ValueError(f"alpha must be positive, got {alpha}")
+        if np.isnan(gamma) or np.isnan(alpha) or np.isnan(M):
+            raise ValueError("Parameters cannot be NaN")
+        if np.isinf(alpha):
+            raise ValueError("alpha cannot be infinite")
         
         # Determine domain constraints
         if gamma > 0:
@@ -61,9 +75,14 @@ class HARAUtility:
         m = np.asarray(m)
         
         # Handle special cases
-        if abs(self.gamma) > 100:  # Approximate ±∞
-            return -np.exp(-self.alpha * m)
-        elif abs(self.gamma - 1.0) < 0.01:  # Approximate 1
+        if abs(self.gamma) > 100:  # Approximate ±∞ (CARA)
+            # CRITICAL FIX: Prevent exponential underflow for large alpha*m
+            exponent = -self.alpha * m
+            # np.exp underflows to 0 for inputs < -709 (log(double_max))
+            exponent = np.clip(exponent, -709, 1000)
+            return -np.exp(exponent)
+        elif abs(self.gamma - 1.0) < 0.1:  # Approximate 1 (expanded from 0.01)
+            # CRITICAL FIX: Use log utility for gamma near 1 to avoid division by near-zero
             return np.log(np.maximum(self.M + self.alpha * m, 1e-10))
         elif abs(self.gamma) < 0.01:  # Approximate 0
             return self.alpha * m - 1.0
@@ -115,8 +134,17 @@ class HARAUtility:
         """
         Compute absolute risk tolerance: -u'(m)/u''(m) = 1/ARA
         Linear for HARA class (characterizing property).
+        
+        SAFETY: Protected against division by near-zero alpha/gamma
         """
-        return self.M / self.alpha + m / self.gamma if self.gamma != 0 else np.full_like(m, 1.0 / self.alpha)
+        # CRITICAL FIX: Protect against division by extremely small alpha
+        alpha_safe = max(self.alpha, 1e-10)
+        
+        # CRITICAL FIX: Protect against near-zero gamma
+        if abs(self.gamma) < 1e-10:
+            return np.full_like(m, 1.0 / alpha_safe)
+        
+        return self.M / alpha_safe + m / self.gamma
 
 
 class HARAMarketMaker:
@@ -129,7 +157,7 @@ class HARAMarketMaker:
     
     def __init__(self, 
                  n_outcomes: int,
-                 gamma: float = -1000,  # Approximate CARA (logarithmic MSR equivalent)
+                 gamma: float = -1000,  # Approximate CARA
                  alpha: float = 1.0,
                  M: float = 0.0,
                  prior: Optional[np.ndarray] = None,
@@ -144,18 +172,43 @@ class HARAMarketMaker:
             M: HARA M parameter
             prior: Subjective probability distribution (uniform if None)
             initial_utility: Target expected utility level (k in Eq 5)
+            
+        SAFETY: Added input validation
         """
+        # CRITICAL FIX: Input validation
+        if not isinstance(n_outcomes, int) or n_outcomes <= 0:
+            raise ValueError(f"n_outcomes must be positive integer, got {n_outcomes}")
+        if not isinstance(gamma, (int, float)):
+            raise TypeError(f"gamma must be numeric, got {type(gamma)}")
+        if not isinstance(alpha, (int, float)):
+            raise TypeError(f"alpha must be numeric, got {type(alpha)}")
+        if not isinstance(M, (int, float)):
+            raise TypeError(f"M must be numeric, got {type(M)}")
+        if alpha <= 0:
+            raise ValueError(f"alpha must be positive, got {alpha}")
+        if np.isnan(gamma) or np.isnan(alpha) or np.isnan(M):
+            raise ValueError("Parameters cannot be NaN")
+        if np.isinf(alpha):
+            raise ValueError("alpha cannot be infinite")
+        
         self.n = n_outcomes
         self.utility = HARAUtility(gamma, alpha, M)
         self.prior = prior if prior is not None else np.ones(n_outcomes) / n_outcomes
         self.k = initial_utility
         
         # Validate prior
-        assert abs(np.sum(self.prior) - 1.0) < 1e-6, "Prior must sum to 1"
-        assert np.all(self.prior > 0), "Prior probabilities must be positive"
+        if not isinstance(self.prior, np.ndarray):
+            raise TypeError(f"prior must be numpy array, got {type(self.prior)}")
+        if len(self.prior) != n_outcomes:
+            raise ValueError(f"prior length ({len(self.prior)}) must match n_outcomes ({n_outcomes})")
+        if not np.all(self.prior >= 0):
+            raise ValueError(f"prior probabilities must be non-negative")
+        prior_sum = np.sum(self.prior)
+        if abs(prior_sum - 1.0) > 1e-4:
+            raise ValueError(f"prior must sum to 1, got {prior_sum}")
         
         # Current state
-        self.q = np.zeros(n_outcomes)  # Net sales (outstanding shares)
+        self.q = np.zeros(n_outcomes)  # Net sales
         self.current_cost = None
         self._update_cost()
     

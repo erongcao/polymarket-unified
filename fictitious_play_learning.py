@@ -70,12 +70,25 @@ class FictitiousPlay:
             n_actions: List of number of actions for each player
             payoff_function: u(a1, a2, ..., an) -> [u1, u2, ..., un]
             initial_beliefs: Initial empirical frequencies (uniform if None)
-            smoothing: Smoothing parameter for belief updates (0 = exact fictitious play)
+            smoothing: Smoothing parameter for belief updates
+            
+        SAFETY: Added input validation
         """
+        # CRITICAL FIX: Input validation
+        if not isinstance(n_players, int) or n_players <= 0:
+            raise ValueError(f"n_players must be positive integer, got {n_players}")
+        if not isinstance(n_actions, (list, tuple)) or len(n_actions) != n_players:
+            raise ValueError(f"n_actions must be list of length {n_players}, got {n_actions}")
+        for i, n_act in enumerate(n_actions):
+            if not isinstance(n_act, int) or n_act <= 0:
+                raise ValueError(f"n_actions[{i}] must be positive integer, got {n_act}")
+        if not isinstance(smoothing, (int, float)) or smoothing < 0 or smoothing > 1:
+            raise ValueError(f"smoothing must be in [0, 1], got {smoothing}")
+        
         self.n = n_players
-        self.n_actions = n_actions
+        self.n_actions = list(n_actions)
         self.payoff = payoff_function
-        self.smoothing = smoothing
+        self.smoothing = float(smoothing)
         
         # Initialize empirical frequencies (beliefs)
         if initial_beliefs is None:
@@ -183,12 +196,25 @@ class FictitiousPlay:
                 # Smoothed fictitious play
                 self.beliefs[player] = (1 - self.smoothing) * self.beliefs[player]
                 self.beliefs[player][action] += self.smoothing
+                
+                # CRITICAL FIX: Renormalize to prevent numerical drift
+                self.beliefs[player] = np.maximum(self.beliefs[player], 0)  # No negative
+                belief_sum = np.sum(self.beliefs[player])
+                if belief_sum > 0:
+                    self.beliefs[player] /= belief_sum
+                else:
+                    # Reset to uniform if somehow all zeros
+                    self.beliefs[player] = np.ones(self.n_actions[player]) / self.n_actions[player]
             else:
                 # Standard fictitious play: uniform over history
                 counts = np.zeros(self.n_actions[player])
                 for h in self.history:
                     counts[h[player]] += 1
-                self.beliefs[player] = counts / len(self.history)
+                total = np.sum(counts)
+                if total > 0:
+                    self.beliefs[player] = counts / total
+                else:
+                    self.beliefs[player] = np.ones(self.n_actions[player]) / self.n_actions[player]
         
         return GameState(new_strategies, len(self.history), converged=False)
     

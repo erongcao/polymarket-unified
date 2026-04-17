@@ -39,15 +39,31 @@ class ShapleySampler:
             random_seed: Random seed for reproducibility
             n_jobs: Number of parallel jobs (-1 for all cores)
             antithetic: Use antithetic variates for variance reduction
+            
+        SAFETY: Added input validation
         """
+        # CRITICAL FIX: Input validation
+        if not isinstance(n_players, int) or n_players <= 0:
+            raise ValueError(f"n_players must be positive integer, got {n_players}")
+        if not isinstance(n_samples, int) or n_samples <= 0:
+            raise ValueError(f"n_samples must be positive integer, got {n_samples}")
+        if not isinstance(n_jobs, int):
+            raise TypeError(f"n_jobs must be integer, got {type(n_jobs)}")
+        if random_seed is not None and not isinstance(random_seed, int):
+            raise TypeError(f"random_seed must be integer or None, got {type(random_seed)}")
+        
         self.n = n_players
         self.v = characteristic_function
         self.n_samples = n_samples
         self.n_jobs = n_jobs if n_jobs > 0 else mp.cpu_count()
         self.antithetic = antithetic
         
+        # CRITICAL FIX: Set seed in reproducible way
         if random_seed is not None:
             np.random.seed(random_seed)
+            self._random_seed = random_seed
+        else:
+            self._random_seed = None
         
         # Storage for computed values
         self.shapley_values: Optional[np.ndarray] = None
