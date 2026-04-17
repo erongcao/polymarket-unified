@@ -204,7 +204,7 @@ class HARAMarketMaker:
         if not np.all(self.prior >= 0):
             raise ValueError(f"prior probabilities must be non-negative")
         prior_sum = np.sum(self.prior)
-        if abs(prior_sum - 1.0) > 1e-4:
+        if abs(prior_sum - 1.0) > 1e-4:  # P1: Make this configurable in future versions
             raise ValueError(f"prior must sum to 1, got {prior_sum}")
         
         # Current state

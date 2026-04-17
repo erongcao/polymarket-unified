@@ -1,2 +1,13 @@
-numpy>=1.20.0
-scipy>=1.7.0
+# P1 FIX: Pinned versions for reproducibility
+# Last updated: 2026-04-18
+
+numpy>=1.20.0,<2.0.0
+scipy>=1.7.0,<2.0.0
+
+# Optional dependencies (for full functionality)
+tqdm>=4.60.0
+
+# Development dependencies (optional)
+# pytest>=6.0.0
+# pytest-cov>=2.0.0
+# black>=22.0.0

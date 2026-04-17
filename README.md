@@ -102,8 +102,9 @@ result = game.analyze_with_fictitious_play(n_iterations=1000)
 ## 📖 Documentation
 
 - [SKILL.md](SKILL.md) - Detailed documentation and API reference
+- [REPRODUCIBILITY.md](REPRODUCIBILITY.md) - Research reproducibility guide
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Development roadmap
-- [CODE_REVIEW_v1.4.0.md](CODE_REVIEW_v1.4.0.md) - Previous version review
+- [CODE_REVIEW_v1.5.0.md](CODE_REVIEW_v1.5.0.md) - Code quality review
 
 ## 🏗️ Project Structure
 

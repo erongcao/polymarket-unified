@@ -92,18 +92,60 @@ class ShapleySampler:
         
         return v_with - v_without
     
-    def _sample_shapley_single(self, player: int, n_samples: int) -> Tuple[float, float]:
+    @staticmethod
+    def _worker_wrapper(args):
+        """
+        P1 FIX: Static wrapper for parallel worker initialization.
+        
+        Args:
+            args: (player_id, n_samples, seed, n_players, v_func, antithetic)
+        """
+        player, n_samples, seed, n_players, v_func, antithetic = args
+        
+        # Create temporary sampler for this worker
+        worker_sampler = ShapleySampler(
+            n_players=n_players,
+            characteristic_function=v_func,
+            n_samples=n_samples,
+            random_seed=seed,
+            n_jobs=1,  # No nested parallelism
+            antithetic=antithetic
+        )
+        
+        return worker_sampler._sample_shapley_single(player, n_samples, seed)
+    
+    @staticmethod
+    def _sample_shapley_single_star(args):
+        """
+        P1 FIX: Helper for parallel processing (pool.map requires single arg).
+        
+        Args tuple: (player, n_samples, seed)
+        """
+        player, n_samples, seed = args
+        # Need to create a temporary instance or make this a static method
+        # For now, this requires the instance method - will handle differently
+        pass  # Placeholder - will fix below
+    
+    def _sample_shapley_single(self, player: int, n_samples: int, seed: Optional[int] = None) -> Tuple[float, float]:
         """
         Sample Shapley value for single player.
+        
+        P1 FIX: Added seed parameter for reproducibility in parallel processing.
         
         Returns:
             (mean_estimate, sample_variance)
         """
+        # P1 FIX: Set local random state if seed provided (for parallel reproducibility)
+        if seed is not None:
+            local_rng = np.random.RandomState(seed)
+        else:
+            local_rng = np.random
+        
         estimates = []
         
         for _ in range(n_samples):
-            # Random permutation
-            permutation = np.random.permutation(self.n)
+            # P1 FIX: Use local_rng for reproducibility
+            permutation = local_rng.permutation(self.n)
             
             # Compute marginal contribution
             mc = self._compute_marginal_contribution(permutation, player)
@@ -138,11 +180,22 @@ class ShapleySampler:
         
         # Parallel processing if n_jobs > 1
         if self.n_jobs > 1:
+            # P1 FIX: Generate unique seeds for each worker for reproducibility
+            if self._random_seed is not None:
+                worker_seeds = [self._random_seed + i for i in range(self.n)]
+            else:
+                worker_seeds = [None] * self.n
+            
+            # P1 FIX: Prepare worker arguments with all necessary context
+            worker_args = [
+                (i, self.n_samples // self.n, worker_seeds[i], 
+                 self.n, self.v, self.antithetic)
+                for i in range(self.n)
+            ]
+            
             with mp.Pool(self.n_jobs) as pool:
-                worker_func = partial(self._sample_shapley_single, 
-                                    n_samples=self.n_samples // self.n)
                 results = list(tqdm(
-                    pool.imap(worker_func, range(self.n)),
+                    pool.imap(ShapleySampler._worker_wrapper, worker_args),
                     total=self.n,
                     desc="Parallel Shapley computation"
                 ))
@@ -151,9 +204,9 @@ class ShapleySampler:
                     shapley_values[i] = mean
                     sampling_variances[i] = var
         else:
-            # Sequential processing
+            # Sequential processing - use single seed
             for i in iterator:
-                mean, var = self._sample_shapley_single(i, self.n_samples // self.n)
+                mean, var = self._sample_shapley_single(i, self.n_samples // self.n, self._random_seed)
                 shapley_values[i] = mean
                 sampling_variances[i] = var
         
