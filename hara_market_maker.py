@@ -13,7 +13,6 @@ Market Makers. UAI 2007.
 
 import numpy as np
 from scipy.optimize import fsolve, minimize
-from scipy.misc import derivative
 from typing import Tuple, Callable, Optional
 import warnings
 
